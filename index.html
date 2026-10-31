@@ -61,7 +61,7 @@
       <!-- Search Section -->
       <section class="glass-card p-6 rounded-xl shadow-md border border-slate-200">
         <h2 class="text-lg font-semibold text-slate-700 mb-2">Look Up Pending Audits</h2>
-        <p class="text-sm text-slate-500 mb-4">Verified Account: <span id="verifiedBadge" class="font-medium text-indigo-600"></span>. Enter your **Agent Emp ID** (e.g. 1111) or **Email Address** to search.</p>
+        <p class="text-sm text-slate-500 mb-4">Verified Account: <span id="verifiedBadge" class="font-medium text-indigo-600"></span>. Enter your **Agent Emp ID** (e.g. 1111) or **Agent Name** to search.</p>
         
         <div class="flex flex-col sm:flex-row gap-3">
           <div class="relative flex-grow">
@@ -69,7 +69,7 @@
             <input 
               type="text" 
               id="agentIdInput" 
-              placeholder="Enter Emp ID (e.g., 1111) or Email (e.g., m.rafique@marketsof1.com)" 
+              placeholder="Enter Agent Emp ID (e.g. 1111) or Agent Name" 
               required
               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all text-slate-800 text-sm"
             />
@@ -101,7 +101,7 @@
       <div id="emptyState" class="hidden text-center py-12 bg-white rounded-xl shadow-sm border border-slate-200">
         <i class="fa-solid fa-circle-check text-4xl text-emerald-500 mb-3"></i>
         <h3 class="text-lg font-semibold text-slate-700">All Caught Up!</h3>
-        <p class="text-slate-500 text-sm mt-1">No pending call audit feedback found for this Employee ID / Email.</p>
+        <p class="text-slate-500 text-sm mt-1">No pending call audit feedback found for this Agent Emp ID or Name.</p>
       </div>
 
     </div>
@@ -161,7 +161,7 @@
       const agentId = agentIdInput.value.trim();
       
       if (!agentId) {
-        showStatus('Please enter your Agent Emp ID or Email address.', 'bg-amber-50 text-amber-800 border border-amber-200');
+        showStatus('Please enter your Agent Emp ID or Agent Name.', 'bg-amber-50 text-amber-800 border border-amber-200');
         return;
       }
 
@@ -212,6 +212,10 @@
 
         card.innerHTML = `
           <div class="flex flex-col sm:flex-row justify-between sm:items-center border-b border-slate-100 pb-3 gap-2">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Agent Name</span>
+              <p class="text-sm font-semibold text-slate-800">${audit.agentName || 'N/A'}</p>
+            </div>
             <div>
               <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Date of Call</span>
               <p class="text-sm font-semibold text-slate-700">${audit.callDate || 'N/A'}</p>
