@@ -123,11 +123,14 @@
     const auditCount = document.getElementById('auditCount');
     const emptyState = document.getElementById('emptyState');
 
-    // Check on page load if user was already authenticated in this browser profile
     window.addEventListener('DOMContentLoaded', () => {
-      const savedEmail = localStorage.getItem('qc_verified_email');
-      if (savedEmail) {
-        setAuthenticatedUser(savedEmail);
+      try {
+        const savedEmail = localStorage.getItem('qc_verified_email');
+        if (savedEmail) {
+          setAuthenticatedUser(savedEmail);
+        }
+      } catch (e) {
+        console.error('Init error:', e);
       }
     });
 
@@ -135,7 +138,6 @@
       try {
         const payload = JSON.parse(atob(response.credential.split('.')[1]));
         authenticatedGoogleEmail = payload.email;
-        
         localStorage.setItem('qc_verified_email', authenticatedGoogleEmail);
         setAuthenticatedUser(authenticatedGoogleEmail);
       } catch (err) {
@@ -148,7 +150,6 @@
       document.getElementById('userEmailDisplay').textContent = email;
       document.getElementById('verifiedBadge').textContent = email;
       document.getElementById('userInfo').classList.remove('hidden');
-      
       document.getElementById('loginSection').classList.add('hidden');
       document.getElementById('portalContent').classList.remove('hidden');
     }
@@ -159,20 +160,22 @@
       document.getElementById('userInfo').classList.add('hidden');
       document.getElementById('portalContent').classList.add('hidden');
       document.getElementById('loginSection').classList.remove('hidden');
-      agentIdInput.value = '';
-      auditsContainer.classList.add('hidden');
-      emptyState.classList.add('hidden');
+      if (agentIdInput) agentIdInput.value = '';
+      if (auditsContainer) auditsContainer.classList.add('hidden');
+      if (emptyState) emptyState.classList.add('hidden');
     }
 
-    agentIdInput.addEventListener('keypress', function (e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleSearch();
-      }
-    });
+    if (agentIdInput) {
+      agentIdInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleSearch();
+        }
+      });
+    }
 
     async function handleSearch() {
-      const agentId = agentIdInput.value.trim();
+      const agentId = agentIdInput ? agentIdInput.value.trim() : '';
       
       if (!agentId) {
         showStatus('Please enter your Agent Emp ID.', 'bg-amber-50 text-amber-800 border border-amber-200');
@@ -180,8 +183,10 @@
       }
 
       showStatus('Fetching pending audits from Google Sheets...', 'bg-blue-50 text-blue-700 border border-blue-200');
-      searchBtn.disabled = true;
-      searchBtn.classList.add('opacity-75');
+      if (searchBtn) {
+        searchBtn.disabled = true;
+        searchBtn.classList.add('opacity-75');
+      }
 
       try {
         const fetchUrl = `${CONFIG.SCRIPT_URL}?agentId=${encodeURIComponent(agentId)}`;
@@ -202,12 +207,15 @@
         showStatus('Network Error: Unable to communicate with Google Sheets endpoint.', 'bg-red-50 text-red-700 border border-red-200');
         console.error('Fetch error:', err);
       } finally {
-        searchBtn.disabled = false;
-        searchBtn.classList.remove('opacity-75');
+        if (searchBtn) {
+          searchBtn.disabled = false;
+          searchBtn.classList.remove('opacity-75');
+        }
       }
     }
 
     function renderAudits(audits) {
+      if (!auditList || !auditCount) return;
       auditList.innerHTML = '';
       auditCount.textContent = audits.length;
 
@@ -224,6 +232,23 @@
         const card = document.createElement('div');
         card.id = `audit-card-${audit.rowIndex}`;
         card.className = 'bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow';
+
+        // Build Areas of Improvement Badges if any parameters were marked "No"
+        let areasOfImprovementHtml = '';
+        if (audit.missedParameters && audit.missedParameters.length > 0) {
+          const badges = audit.missedParameters.map(p => 
+            `<span class="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-md font-medium border border-amber-200">${p}</span>`
+          ).join('');
+          
+          areasOfImprovementHtml = `
+            <div class="bg-amber-50/70 p-3.5 rounded-lg border border-amber-200 space-y-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-amber-800 block">
+                <i class="fa-solid fa-triangle-exclamation mr-1.5 text-amber-600"></i>Areas of Improvement
+              </span>
+              <div class="flex flex-wrap gap-1.5">${badges}</div>
+            </div>
+          `;
+        }
 
         card.innerHTML = `
           <div class="flex flex-col sm:flex-row justify-between sm:items-center border-b border-slate-100 pb-3 gap-2">
@@ -261,6 +286,9 @@
                 : `<span class="text-xs text-slate-400 italic">No recording available</span>`
             }
           </div>
+
+          <!-- Areas of Improvement Section (Displayed above QA Comments) -->
+          ${areasOfImprovementHtml}
 
           <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200">
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Overall QA Comments</span>
@@ -315,7 +343,6 @@
         return;
       }
 
-      // 1. Lock text area and buttons immediately to signal submitting state
       if (remarksInput) remarksInput.disabled = true;
       if (btnAccept) {
         btnAccept.disabled = true;
@@ -326,11 +353,10 @@
         btnDispute.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
       }
 
-      // Update active button icon to a spinner
       const activeBtn = actionStatus === 'Accepted' ? btnAccept : btnDispute;
-      const activeBtnIcon = activeBtn.querySelector('i');
-      if (activeBtnIcon) {
-        activeBtnIcon.className = 'fa-solid fa-spinner fa-spin';
+      if (activeBtn) {
+        const activeBtnIcon = activeBtn.querySelector('i');
+        if (activeBtnIcon) activeBtnIcon.className = 'fa-solid fa-spinner fa-spin';
       }
 
       showStatus(`Submitting status "${actionStatus}" to Google Sheets...`, 'bg-blue-50 text-blue-700 border border-blue-200');
@@ -354,16 +380,16 @@
           setTimeout(() => handleSearch(), 1200);
         } else {
           showStatus(result.message || 'Failed to record response.', 'bg-red-50 text-red-700 border border-red-200');
-          unlockControls(rowIndex, actionStatus);
+          unlockControls(rowIndex);
         }
       } catch (err) {
         showStatus('Error communicating with Google Sheet endpoint.', 'bg-red-50 text-red-700 border border-red-200');
         console.error('Submit error:', err);
-        unlockControls(rowIndex, actionStatus);
+        unlockControls(rowIndex);
       }
     }
 
-    function unlockControls(rowIndex, actionStatus) {
+    function unlockControls(rowIndex) {
       const remarksInput = document.getElementById(`remarks-${rowIndex}`);
       const btnAccept = document.getElementById(`btn-accept-${rowIndex}`);
       const btnDispute = document.getElementById(`btn-dispute-${rowIndex}`);
@@ -372,23 +398,26 @@
       if (btnAccept) {
         btnAccept.disabled = false;
         btnAccept.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-        btnAccept.querySelector('i').className = 'fa-solid fa-check';
+        const icon = btnAccept.querySelector('i');
+        if (icon) icon.className = 'fa-solid fa-check';
       }
       if (btnDispute) {
         btnDispute.disabled = false;
         btnDispute.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-        btnDispute.querySelector('i').className = 'fa-solid fa-triangle-exclamation';
+        const icon = btnDispute.querySelector('i');
+        if (icon) icon.className = 'fa-solid fa-triangle-exclamation';
       }
     }
 
     function showStatus(msg, classes) {
+      if (!statusMessage) return;
       statusMessage.className = `p-4 rounded-lg text-sm text-center font-medium ${classes}`;
       statusMessage.textContent = msg;
       statusMessage.classList.remove('hidden');
     }
 
     function hideStatus() {
-      statusMessage.classList.add('hidden');
+      if (statusMessage) statusMessage.classList.add('hidden');
     }
   </script>
 </body>
