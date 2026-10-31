@@ -1,424 +1,222 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent Call Audit Feedback Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <style>
-    .glass-card {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
+function doGet(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Form Responses 1") || ss.getSheets()[0];
+    var data = sheet.getDataRange().getValues();
+    
+    if (data.length < 2) {
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", audits: [] }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-  </style>
-</head>
-<body class="bg-slate-100 min-h-screen text-slate-800 font-sans">
-
-  <!-- Header -->
-  <header class="bg-indigo-900 text-white shadow-lg py-4 px-6">
-    <div class="max-w-6xl mx-auto flex justify-between items-center">
-      <div class="flex items-center space-x-3">
-        <i class="fa-solid fa-clipboard-check text-2xl text-emerald-400"></i>
-        <h1 class="text-xl font-bold tracking-wide">Agent QC Audit Portal</h1>
-      </div>
-      <div id="userInfo" class="hidden flex items-center space-x-3">
-        <span id="userEmailDisplay" class="text-xs bg-indigo-800 text-indigo-200 px-3 py-1.5 rounded-full font-medium"></span>
-        <button onclick="signOut()" class="text-xs text-rose-300 hover:text-white underline">Sign Out</button>
-      </div>
-    </div>
-  </header>
-
-  <main class="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
-
-    <!-- Google Sign-In Gate -->
-    <section id="loginSection" class="glass-card p-8 rounded-xl shadow-md border border-slate-200 text-center max-w-md mx-auto my-12 space-y-4">
-      <i class="fa-solid fa-lock text-4xl text-indigo-600 mb-2"></i>
-      <h2 class="text-xl font-bold text-slate-700">Google Authentication Required</h2>
-      <p class="text-sm text-slate-500">Please sign in with your Google account to verify your identity before accessing audit feedback.</p>
+    
+    var headers = data[0];
+    
+    var empIdCol = findColumnIndex(headers, ["Agent Emp ID", "Emp ID", "Employee ID"]);
+    var emailCol = findColumnIndex(headers, ["Email Address", "QA Email Address", "Agent Email"]);
+    var agentNameCol = findColumnIndex(headers, ["Agent Name", "CRM ID"]);
+    
+    var callDateCol = findColumnIndex(headers, ["Call Date", "Date of Call", "Call Start Time"]);
+    var callDurationCol = findColumnIndex(headers, ["Call Duration", "Duration"]);
+    var recLinkCol = findColumnIndex(headers, ["Recording link", "Recording Link", "Recording"]);
+    var qaScoreCol = findColumnIndex(headers, ["QA Score", "Score"]);
+    var qaNameCol = findColumnIndex(headers, ["QA Name", "Auditor"]);
+    var tlNameCol = findColumnIndex(headers, ["TL Name", "Team Lead"]);
+    var processCol = findColumnIndex(headers, ["Process"]);
+    var commentsCol = findColumnIndex(headers, ["Overall Comments", "Comments", "QA Comments", "Feedback"]);
+    var statusCol = findColumnIndex(headers, ["Feedback Status", "Status"]);
+    
+    // Core parameters to check for "No" answers
+    var checklistDefs = [
+      { keys: ["Greeting", "RPC"], label: "Greeting & RPC" },
+      { keys: ["Purpose of the call"], label: "Purpose of Call" },
+      { keys: ["Campaign Offer explanation"], label: "Campaign Offer Explanation" },
+      { keys: ["Effective probing"], label: "Effective Probing" },
+      { keys: ["Objection", "Query Handling"], label: "Objection / Query Handling" },
+      { keys: ["Urgency creation"], label: "Urgency Creation & Convincing" },
+      { keys: ["Appointment fixing"], label: "Appointment Fixing" },
+      { keys: ["Active Listening"], label: "Active Listening" },
+      { keys: ["Effective Communication"], label: "Effective Communication" },
+      { keys: ["Rapport building"], label: "Rapport Building" },
+      { keys: ["Dead air", "Stammering", "Fillers"], label: "Dead Air / Fillers" },
+      { keys: ["Call Closing"], label: "Call Closing" },
+      { keys: ["ATM:Data enrichment"], label: "ATM: Data Enrichment" },
+      { keys: ["ATM:Offer Communication Preference"], label: "ATM: Offer Preference" }
+    ];
+    
+    var searchParam = e.parameter.agentId || e.parameter.agentID || e.parameter.empId || e.parameter.email || e.parameter.crmId || e.parameter.agent;
+    
+    if (!searchParam) {
+      return ContentService.createTextOutput(JSON.stringify({ 
+        status: "error", 
+        message: "Search identifier required." 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var searchKey = String(searchParam).trim().toLowerCase();
+    var pendingAudits = [];
+    
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
       
-      <div class="flex justify-center pt-2">
-        <div id="g_id_onload"
-             data-client_id="228921711395-tf534ha4idd47tf8jthp8hbtd8s3kb5h.apps.googleusercontent.com"
-             data-callback="handleCredentialResponse"
-             data-auto_prompt="true">
-        </div>
-        <div class="g_id_signin"
-             data-type="standard"
-             data-size="large"
-             data-theme="outline"
-             data-text="sign_in_with"
-             data-shape="rectangular"
-             data-logo_alignment="left">
-        </div>
-      </div>
-    </section>
-
-    <!-- Main Portal Content -->
-    <div id="portalContent" class="hidden space-y-6">
+      var rowEmpId = empIdCol !== -1 ? String(row[empIdCol]).trim().toLowerCase() : "";
+      var rowEmail = emailCol !== -1 ? String(row[emailCol]).trim().toLowerCase() : "";
+      var rowAgentName = agentNameCol !== -1 ? String(row[agentNameCol]).trim().toLowerCase() : "";
       
-      <!-- Search Section -->
-      <section class="glass-card p-6 rounded-xl shadow-md border border-slate-200">
-        <h2 class="text-lg font-semibold text-slate-700 mb-2">Look Up Pending Audits</h2>
-        <p class="text-sm text-slate-500 mb-4">Verified Account: <span id="verifiedBadge" class="font-medium text-indigo-600"></span>. Enter your **Agent Emp ID** to search.</p>
-        
-        <div class="flex flex-col sm:flex-row gap-3">
-          <div class="relative flex-grow">
-            <i class="fa-solid fa-user-tag absolute left-3.5 top-3.5 text-slate-400"></i>
-            <input 
-              type="text" 
-              id="agentIdInput" 
-              placeholder="Enter Agent Emp ID (e.g. 1111)" 
-              required
-              class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all text-slate-800 text-sm"
-            />
-          </div>
-          <button 
-            type="button" 
-            id="searchBtn"
-            onclick="handleSearch()"
-            class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-2.5 rounded-lg transition-all flex items-center justify-center space-x-2 shadow-sm text-sm"
-          >
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <span>Find Audits</span>
-          </button>
-        </div>
-      </section>
-
-      <!-- Status Message Banner -->
-      <div id="statusMessage" class="hidden p-4 rounded-lg text-sm text-center font-medium"></div>
-
-      <!-- Audits Container -->
-      <section id="auditsContainer" class="space-y-6 hidden">
-        <div class="flex justify-between items-center border-b border-slate-200 pb-2">
-          <h3 class="text-md font-bold text-slate-700">Pending Audits (<span id="auditCount">0</span>)</h3>
-        </div>
-        <div id="auditList" class="space-y-4"></div>
-      </section>
-
-      <!-- Empty State -->
-      <div id="emptyState" class="hidden text-center py-12 bg-white rounded-xl shadow-sm border border-slate-200">
-        <i class="fa-solid fa-circle-check text-4xl text-emerald-500 mb-3"></i>
-        <h3 class="text-lg font-semibold text-slate-700">All Caught Up!</h3>
-        <p class="text-slate-500 text-sm mt-1">No pending call audit feedback found for this Agent Emp ID.</p>
-      </div>
-
-    </div>
-
-  </main>
-
-  <script>
-    const CONFIG = {
-      SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbwPq6eSivJk85PcogsQ4fm3ZMzIScw0L--YgOCZu2wnl9P3R6pr9LhtVf3XUoq9K9QaYw/exec'
-    };
-
-    let authenticatedGoogleEmail = '';
-
-    const agentIdInput = document.getElementById('agentIdInput');
-    const searchBtn = document.getElementById('searchBtn');
-    const statusMessage = document.getElementById('statusMessage');
-    const auditsContainer = document.getElementById('auditsContainer');
-    const auditList = document.getElementById('auditList');
-    const auditCount = document.getElementById('auditCount');
-    const emptyState = document.getElementById('emptyState');
-
-    window.addEventListener('DOMContentLoaded', () => {
-      try {
-        const savedEmail = localStorage.getItem('qc_verified_email');
-        if (savedEmail) {
-          setAuthenticatedUser(savedEmail);
-        }
-      } catch (e) {
-        console.error('Init error:', e);
+      var rowStatus = statusCol !== -1 ? String(row[statusCol]).trim() : "Pending";
+      if (!rowStatus) {
+        rowStatus = "Pending";
       }
-    });
-
-    function handleCredentialResponse(response) {
-      try {
-        const payload = JSON.parse(atob(response.credential.split('.')[1]));
-        authenticatedGoogleEmail = payload.email;
-        localStorage.setItem('qc_verified_email', authenticatedGoogleEmail);
-        setAuthenticatedUser(authenticatedGoogleEmail);
-      } catch (err) {
-        console.error('Failed to parse Google credential token:', err);
-      }
-    }
-
-    function setAuthenticatedUser(email) {
-      authenticatedGoogleEmail = email;
-      document.getElementById('userEmailDisplay').textContent = email;
-      document.getElementById('verifiedBadge').textContent = email;
-      document.getElementById('userInfo').classList.remove('hidden');
-      document.getElementById('loginSection').classList.add('hidden');
-      document.getElementById('portalContent').classList.remove('hidden');
-    }
-
-    function signOut() {
-      authenticatedGoogleEmail = '';
-      localStorage.removeItem('qc_verified_email');
-      document.getElementById('userInfo').classList.add('hidden');
-      document.getElementById('portalContent').classList.add('hidden');
-      document.getElementById('loginSection').classList.remove('hidden');
-      if (agentIdInput) agentIdInput.value = '';
-      if (auditsContainer) auditsContainer.classList.add('hidden');
-      if (emptyState) emptyState.classList.add('hidden');
-    }
-
-    if (agentIdInput) {
-      agentIdInput.addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleSearch();
-        }
-      });
-    }
-
-    async function handleSearch() {
-      const agentId = agentIdInput ? agentIdInput.value.trim() : '';
       
-      if (!agentId) {
-        showStatus('Please enter your Agent Emp ID.', 'bg-amber-50 text-amber-800 border border-amber-200');
-        return;
-      }
-
-      showStatus('Fetching pending audits from Google Sheets...', 'bg-blue-50 text-blue-700 border border-blue-200');
-      if (searchBtn) {
-        searchBtn.disabled = true;
-        searchBtn.classList.add('opacity-75');
-      }
-
-      try {
-        const fetchUrl = `${CONFIG.SCRIPT_URL}?agentId=${encodeURIComponent(agentId)}`;
-        const response = await fetch(fetchUrl, {
-          method: 'GET',
-          redirect: 'follow'
-        });
-
-        const result = await response.json();
-
-        if (result.status === 'success') {
-          hideStatus();
-          renderAudits(result.audits || []);
-        } else {
-          showStatus(result.message || 'Error fetching records.', 'bg-red-50 text-red-700 border border-red-200');
-        }
-      } catch (err) {
-        showStatus('Network Error: Unable to communicate with Google Sheets endpoint.', 'bg-red-50 text-red-700 border border-red-200');
-        console.error('Fetch error:', err);
-      } finally {
-        if (searchBtn) {
-          searchBtn.disabled = false;
-          searchBtn.classList.remove('opacity-75');
-        }
-      }
-    }
-
-    function renderAudits(audits) {
-      if (!auditList || !auditCount) return;
-      auditList.innerHTML = '';
-      auditCount.textContent = audits.length;
-
-      if (audits.length === 0) {
-        auditsContainer.classList.add('hidden');
-        emptyState.classList.remove('hidden');
-        return;
-      }
-
-      emptyState.classList.add('hidden');
-      auditsContainer.classList.remove('hidden');
-
-      audits.forEach((audit) => {
-        const card = document.createElement('div');
-        card.id = `audit-card-${audit.rowIndex}`;
-        card.className = 'bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow';
-
-        // Build Areas of Improvement Badges if any parameters were marked "No"
-        let areasOfImprovementHtml = '';
-        if (audit.missedParameters && audit.missedParameters.length > 0) {
-          const badges = audit.missedParameters.map(p => 
-            `<span class="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-md font-medium border border-amber-200">${p}</span>`
-          ).join('');
-          
-          areasOfImprovementHtml = `
-            <div class="bg-amber-50/70 p-3.5 rounded-lg border border-amber-200 space-y-2">
-              <span class="text-xs font-semibold uppercase tracking-wider text-amber-800 block">
-                <i class="fa-solid fa-triangle-exclamation mr-1.5 text-amber-600"></i>Areas of Improvement
-              </span>
-              <div class="flex flex-wrap gap-1.5">${badges}</div>
-            </div>
-          `;
-        }
-
-        card.innerHTML = `
-          <div class="flex flex-col sm:flex-row justify-between sm:items-center border-b border-slate-100 pb-3 gap-2">
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Agent Name</span>
-              <p class="text-sm font-semibold text-slate-800">${audit.agentName || 'N/A'}</p>
-            </div>
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Date of Call</span>
-              <p class="text-sm font-semibold text-slate-700">${audit.callDate || 'N/A'}</p>
-            </div>
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Duration</span>
-              <p class="text-sm font-semibold text-slate-700">${audit.callDuration || 'N/A'}</p>
-            </div>
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">QA Score</span>
-              <p class="text-sm font-bold text-indigo-600">${audit.qaScore || 'N/A'}</p>
-            </div>
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">QA Auditor</span>
-              <p class="text-sm font-semibold text-slate-700">${audit.qaName || 'N/A'}</p>
-            </div>
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Team Lead</span>
-              <p class="text-sm font-semibold text-slate-700">${audit.tlName || 'N/A'}</p>
-            </div>
-          </div>
-
-          <div>
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-1">Recording Link</span>
-            ${
-              audit.recordingLink 
-                ? `<a href="${audit.recordingLink}" target="_blank" class="inline-flex items-center space-x-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-md transition-colors"><i class="fa-solid fa-play"></i><span>Listen to Recording</span></a>` 
-                : `<span class="text-xs text-slate-400 italic">No recording available</span>`
+      var matchesUser = (rowEmpId === searchKey) || 
+                        (rowEmail === searchKey) || 
+                        (rowAgentName && (rowAgentName === searchKey || rowAgentName.indexOf(searchKey) !== -1));
+      
+      if (matchesUser && rowStatus.toLowerCase() === "pending") {
+        // Find parameters marked "No" or "no"
+        var missed = [];
+        for (var c = 0; c < checklistDefs.length; c++) {
+          var colIdx = findColumnIndex(headers, checklistDefs[c].keys);
+          if (colIdx !== -1) {
+            var cellVal = String(row[colIdx]).trim().toLowerCase();
+            if (cellVal === "no" || cellVal === "n") {
+              missed.push(checklistDefs[c].label);
             }
-          </div>
-
-          <!-- Areas of Improvement Section (Displayed above QA Comments) -->
-          ${areasOfImprovementHtml}
-
-          <div class="bg-slate-50 p-3.5 rounded-lg border border-slate-200">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1">Overall QA Comments</span>
-            <p class="text-sm text-slate-700 whitespace-pre-line leading-relaxed">${audit.qaComments || 'No comments provided.'}</p>
-          </div>
-
-          <div class="space-y-3 pt-2">
-            <div>
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1">Agent Remarks / Reason (Optional for Accept, Required for Dispute)</label>
-              <textarea 
-                id="remarks-${audit.rowIndex}" 
-                rows="2" 
-                placeholder="Add your comments here..."
-                class="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-              ></textarea>
-            </div>
-
-            <div class="flex items-center space-x-3 pt-1">
-              <button 
-                id="btn-accept-${audit.rowIndex}"
-                onclick="submitFeedback(${audit.rowIndex}, 'Accepted')" 
-                class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center space-x-1.5 shadow-sm"
-              >
-                <i class="fa-solid fa-check"></i>
-                <span>Accept Audit</span>
-              </button>
-              <button 
-                id="btn-dispute-${audit.rowIndex}"
-                onclick="submitFeedback(${audit.rowIndex}, 'Disputed')" 
-                class="flex-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center space-x-1.5 shadow-sm"
-              >
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span>Dispute Audit</span>
-              </button>
-            </div>
-          </div>
-        `;
-
-        auditList.appendChild(card);
-      });
-    }
-
-    async function submitFeedback(rowIndex, actionStatus) {
-      const remarksInput = document.getElementById(`remarks-${rowIndex}`);
-      const btnAccept = document.getElementById(`btn-accept-${rowIndex}`);
-      const btnDispute = document.getElementById(`btn-dispute-${rowIndex}`);
-      const remarks = remarksInput ? remarksInput.value.trim() : '';
-
-      if (actionStatus === 'Disputed' && !remarks) {
-        alert('Please provide remarks explaining why you are disputing this call audit.');
-        if (remarksInput) remarksInput.focus();
-        return;
-      }
-
-      if (remarksInput) remarksInput.disabled = true;
-      if (btnAccept) {
-        btnAccept.disabled = true;
-        btnAccept.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-      }
-      if (btnDispute) {
-        btnDispute.disabled = true;
-        btnDispute.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-      }
-
-      const activeBtn = actionStatus === 'Accepted' ? btnAccept : btnDispute;
-      if (activeBtn) {
-        const activeBtnIcon = activeBtn.querySelector('i');
-        if (activeBtnIcon) activeBtnIcon.className = 'fa-solid fa-spinner fa-spin';
-      }
-
-      showStatus(`Submitting status "${actionStatus}" to Google Sheets...`, 'bg-blue-50 text-blue-700 border border-blue-200');
-
-      try {
-        const response = await fetch(CONFIG.SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            rowIndex: rowIndex,
-            actionStatus: actionStatus,
-            agentRemarks: remarks,
-            verifiedGoogleAccount: authenticatedGoogleEmail
-          })
-        });
-
-        const result = await response.json();
-
-        if (result.status === 'success') {
-          showStatus(`Audit feedback recorded as "${actionStatus}". Refreshing list...`, 'bg-emerald-50 text-emerald-700 border border-emerald-200');
-          setTimeout(() => handleSearch(), 1200);
-        } else {
-          showStatus(result.message || 'Failed to record response.', 'bg-red-50 text-red-700 border border-red-200');
-          unlockControls(rowIndex);
+          }
         }
-      } catch (err) {
-        showStatus('Error communicating with Google Sheet endpoint.', 'bg-red-50 text-red-700 border border-red-200');
-        console.error('Submit error:', err);
-        unlockControls(rowIndex);
+        
+        pendingAudits.push({
+          rowIndex: i + 1,
+          empId: empIdCol !== -1 ? String(row[empIdCol]) : "N/A",
+          agentName: agentNameCol !== -1 ? String(row[agentNameCol]) : "N/A",
+          callDate: callDateCol !== -1 ? formatDate(row[callDateCol]) : "N/A",
+          callDuration: callDurationCol !== -1 ? formatDate(row[callDurationCol]) : "N/A",
+          recordingLink: recLinkCol !== -1 ? String(row[recLinkCol]) : "",
+          qaScore: qaScoreCol !== -1 ? row[qaScoreCol] : "N/A",
+          qaComments: commentsCol !== -1 ? String(row[commentsCol]) : "No overall comments provided.",
+          qaName: qaNameCol !== -1 ? String(row[qaNameCol]) : "N/A",
+          tlName: tlNameCol !== -1 ? String(row[tlNameCol]) : "N/A",
+          process: processCol !== -1 ? String(row[processCol]) : "N/A",
+          missedParameters: missed,
+          feedbackStatus: rowStatus
+        });
       }
     }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      audits: pendingAudits
+    })).setMimeType(ContentService.MimeType.JSON);
 
-    function unlockControls(rowIndex) {
-      const remarksInput = document.getElementById(`remarks-${rowIndex}`);
-      const btnAccept = document.getElementById(`btn-accept-${rowIndex}`);
-      const btnDispute = document.getElementById(`btn-dispute-${rowIndex}`);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
 
-      if (remarksInput) remarksInput.disabled = false;
-      if (btnAccept) {
-        btnAccept.disabled = false;
-        btnAccept.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-        const icon = btnAccept.querySelector('i');
-        if (icon) icon.className = 'fa-solid fa-check';
+function doPost(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Form Responses 1") || ss.getSheets()[0];
+    var headers = sheet.getDataRange().getValues()[0];
+    
+    var statusColIdx = findColumnIndex(headers, ["Feedback Status", "Status"]) + 1;
+    var remarksColIdx = findColumnIndex(headers, ["Agent Remarks", "Remarks"]) + 1;
+    var googleIdColIdx = findColumnIndex(headers, ["Verified Google ID", "Google Account", "Agent Verified Email"]) + 1;
+    
+    var payload = JSON.parse(e.postData.contents);
+    var rowIndex = payload.rowIndex;
+    var actionStatus = payload.actionStatus;
+    var remarks = payload.agentRemarks || "";
+    var verifiedGoogleAccount = payload.verifiedGoogleAccount || "Not Provided";
+    
+    if (rowIndex > 1) {
+      if (statusColIdx > 0) {
+        sheet.getRange(rowIndex, statusColIdx).setValue(actionStatus);
       }
-      if (btnDispute) {
-        btnDispute.disabled = false;
-        btnDispute.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-        const icon = btnDispute.querySelector('i');
-        if (icon) icon.className = 'fa-solid fa-triangle-exclamation';
+      if (remarksColIdx > 0) {
+        sheet.getRange(rowIndex, remarksColIdx).setValue(remarks);
+      }
+      if (googleIdColIdx > 0) {
+        sheet.getRange(rowIndex, googleIdColIdx).setValue(verifiedGoogleAccount);
+      }
+      
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        message: "Audit marked as " + actionStatus
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: "Invalid row index"
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// Upgraded lookup helper: Supports exact or partial keyword matching
+function findColumnIndex(headers, posibles) {
+  for (var j = 0; j < posibles.length; j++) {
+    var target = posibles[j].trim().toLowerCase();
+    
+    // First pass: Exact match
+    for (var i = 0; i < headers.length; i++) {
+      var headerStr = String(headers[i]).trim().toLowerCase();
+      if (headerStr === target) {
+        return i;
       }
     }
-
-    function showStatus(msg, classes) {
-      if (!statusMessage) return;
-      statusMessage.className = `p-4 rounded-lg text-sm text-center font-medium ${classes}`;
-      statusMessage.textContent = msg;
-      statusMessage.classList.remove('hidden');
+    
+    // Second pass: Partial match (contains string)
+    for (var k = 0; k < headers.length; k++) {
+      var headerStr2 = String(headers[k]).trim().toLowerCase();
+      if (headerStr2.indexOf(target) !== -1) {
+        return k;
+      }
     }
+  }
+  return -1;
+}
 
-    function hideStatus() {
-      if (statusMessage) statusMessage.classList.add('hidden');
+function formatDate(val) {
+  if (!val) return "N/A";
+  
+  if (val instanceof Date) {
+    var year = val.getFullYear();
+    if (year < 1970) {
+      var hours = val.getHours();
+      var minutes = val.getMinutes();
+      var seconds = val.getSeconds();
+      return (hours < 10 ? "0" + hours : hours) + ":" + 
+             (minutes < 10 ? "0" + minutes : minutes) + ":" + 
+             (seconds < 10 ? "0" + seconds : seconds);
     }
-  </script>
-</body>
-</html>
+    
+    var day = val.getDate();
+    var month = val.getMonth() + 1;
+    var dayStr = day < 10 ? "0" + day : String(day);
+    var monthStr = month < 10 ? "0" + month : String(month);
+    return dayStr + "/" + monthStr + "/" + year;
+  }
+  
+  var strVal = String(val).trim();
+  var parsedDate = new Date(strVal);
+  if (!isNaN(parsedDate.getTime()) && strVal.length >= 8 && !strVal.match(/AM|PM/i)) {
+    var pYear = parsedDate.getFullYear();
+    if (pYear >= 1970) {
+      var pDay = parsedDate.getDate();
+      var pMonth = parsedDate.getMonth() + 1;
+      var pDayStr = pDay < 10 ? "0" + pDay : String(pDay);
+      var pMonthStr = pMonth < 10 ? "0" + pMonth : String(pMonth);
+      return pDayStr + "/" + pMonthStr + "/" + pYear;
+    }
+  }
+  return strVal;
+}
